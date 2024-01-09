@@ -8,7 +8,7 @@ import os
 import time
 
 import password_dict
-import airmon_ng
+import aircrack_ng
 
 
 def create_data_dir(path: str)->bool:
@@ -33,8 +33,8 @@ def main()->bool:
     """
     主要工作流程
     """
-    # 检查环境是否可以运行airmon-ng    
-    if not airmon_ng.check_env():
+    # 检查环境是否可以运行aircrack_ng
+    if not aircrack_ng.check_env():
         return False
 
     # 创建一个目录， 存放工作过程中产生的数据文件
@@ -55,12 +55,12 @@ def main()->bool:
 
 if __name__ == '__main__':
     start_time = time.perf_counter()
-    success = main()
+    is_success: bool = main()
     elapse = int(time.perf_counter() - start_time)
     second = int(time.perf_counter() - start_time) % 60
     minute = int((second / 60) % 60)
     hour = int((second / 60) / 60)
-    if success:
+    if is_success:
         print(f"[finish] success, elapse {hour}h{minute}m{second}s")
     else:
         print(f"[finish] failed, elapse {hour}h{minute}m{second}s")

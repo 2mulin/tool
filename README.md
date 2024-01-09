@@ -2,18 +2,18 @@
 
 用Python实现的各种五花八门的工具;
 
-## 一. airmon-ng工具链
+## 一. Aircrack-ng工具链
 
-airmon-ng可以用来抓取wifi数据包, 并且通过抓到连接wifi时的认证包来破解wifi密码; **请注意： 破解他人的wifi密码是违法行为**; 我这里只是用自己的wifi研究技术问题, airmon-ng工具使用方法; 
+Aircrack-ng可以用来抓取wifi数据包, 并且通过抓到连接wifi时的认证包来破解wifi密码; **请注意： 破解他人的wifi密码是违法行为**; 我这里只是用自己的wifi研究技术问题, Aircrack-ng工具使用方法; 
 
 ### 1.1 环境依赖
 
 * 操作系统: kali
 * python 3.11.6
-* 工具: airmon-ng
+* 工具: Aircrack-ng
 * 有一个支持监听的网卡
 
-airmon-ng具体使用步骤如下
+具体使用步骤如下
 
 ### 1.2 开启监听
 
