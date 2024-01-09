@@ -33,7 +33,7 @@ def generate_phone_num(filename: str) -> bool:
         phone_num = provider_num * 100000000
         try:
             with open(filename, 'w', encoding='utf-8') as file:
-                for _ in range(0, 100000000):
+                for _ in range(0, 99999999):
                     phone_num += 1
                     buf = f"{phone_num}\n"
                     file.write(buf)
