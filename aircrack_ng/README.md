@@ -1,6 +1,6 @@
-# tool
+# aircrack_ng
 
-用Python实现的各种五花八门的工具;
+偶然看到的一个命令, 挺有意思, 就想用Python实现自动化的破解某WIFI;
 
 ## 一. Aircrack-ng工具链
 
@@ -44,5 +44,5 @@ aireplay-ng -0 0 -a 88:88:88:88:88:88 -c 88:88:88:88:88:88 wlan0mon
 
 使用指定密码字典开始破解
 
-aircrack-ng -a2 -b 88:88:88:88:88:88 -w ../password_dict/*.txt ./5E03-02.cap
+aircrack-ng -a2 -b 88:88:88:88:88:88 -w ../password_dict/*.txt ./wifi.cap
 
