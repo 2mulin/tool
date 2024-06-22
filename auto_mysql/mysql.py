@@ -1,4 +1,4 @@
-#-*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 @brief: mysql相关的脚本, 比如支持安装MySQL
 @date: 2024/6/2

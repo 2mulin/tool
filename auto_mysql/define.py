@@ -84,14 +84,18 @@ loose-spider_general_log = ON
 """
 
 
-log_handler = logging.StreamHandler(stream=sys.stderr)
-log_fotmatter = logging.Formatter(fmt="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-log_handler.setFormatter(log_fotmatter)
-log_handler.setLevel(logging.ERROR)
-
-logging.basicConfig(filename='auto_mysql.log', 
-    format="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(message)s",
+logging.basicConfig(format="%(asctime)s %(levelname)-8s %(filename)s:%(lineno)d %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S", 
     encoding='utf-8', level=logging.INFO)
+
+log_fotmatter = logging.Formatter(fmt="%(asctime)s %(levelname)-8s %(filename)s:%(lineno)d %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+stream_handler = logging.StreamHandler(stream=sys.stderr)
+stream_handler.setFormatter(log_fotmatter)
+# 终端只输出error级别以上日志
+stream_handler.setLevel(logging.ERROR)
+file_handler = logging.FileHandler(filename='auto_mysql.log', encoding='utf-8')
+file_handler.setFormatter(log_fotmatter)
+file_handler.setLevel(logging.INFO)
 logger = logging.getLogger("auto_mysql")
-logger.addHandler(log_handler)
+logger.addHandler(stream_handler)
+logger.addHandler(file_handler)
