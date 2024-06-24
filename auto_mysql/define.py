@@ -1,4 +1,4 @@
-#-*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 @brief 全局变量的声明
 相当是配置文件, 可以修改创建实例的MySQL设置; 以及不同的版本;
@@ -83,19 +83,20 @@ report_port = {port}
 loose-spider_general_log = ON
 """
 
-
-logging.basicConfig(format="%(asctime)s %(levelname)-8s %(filename)s:%(lineno)d %(message)s",
+# 指定filename参数, 则该函数默认生成一个FileHandler(日志级别是NOTSET)并且加入到root日志记录器
+logging.basicConfig(
+    format="%(asctime)s %(levelname)-8s %(filename)s:%(lineno)d %(message)s",
+    filename="auto_mysql.log",                
     datefmt="%Y-%m-%d %H:%M:%S", 
-    encoding='utf-8', level=logging.INFO)
+    encoding='utf-8',
+    level=logging.INFO)
 
-log_fotmatter = logging.Formatter(fmt="%(asctime)s %(levelname)-8s %(filename)s:%(lineno)d %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+log_fotmatter = logging.Formatter(
+    fmt="%(asctime)s %(levelname)-8s %(filename)s:%(lineno)d %(message)s", 
+    datefmt="%Y-%m-%d %H:%M:%S")
 stream_handler = logging.StreamHandler(stream=sys.stderr)
 stream_handler.setFormatter(log_fotmatter)
-# 终端只输出error级别以上日志
+# 控制台只输出ERROR级别以上日志
 stream_handler.setLevel(logging.ERROR)
-file_handler = logging.FileHandler(filename='auto_mysql.log', encoding='utf-8')
-file_handler.setFormatter(log_fotmatter)
-file_handler.setLevel(logging.INFO)
-logger = logging.getLogger("auto_mysql")
+logger = logging.getLogger("root")
 logger.addHandler(stream_handler)
-logger.addHandler(file_handler)
