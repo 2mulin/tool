@@ -1,237 +1,300 @@
 # -*- coding: utf-8 -*-
-"""
-@brief: mysql相关的脚本, 比如支持安装MySQL
-@date: 2024/6/2
-"""
 
 
+import abc
 import os
-import platform
-import socket
+import signal
 import subprocess
 import time
-import configparser
 
 import pymysql
 
+from . import util, define
 from .define import logger
-from .define import MYSQL_BASENAME, MYSQL_DATA_DIR_TEMPLATE, MYSQL_CONF_TEMPLATE
-from .define import MARIADB_BASENAME, MARIADB_DATA_DIR_TEMPLATE, MARIADB_CONF_TEMPLATE
 
 
-def get_current_username():
-    if platform.system() == "Windows":
-        return os.environ.get("USERNAME")
-    return os.environ.get("USER")
-
-
-def is_port_in_use(port):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        sock.connect(("127.0.0.1", port))
-        is_open = True
-    except (TimeoutError, ConnectionRefusedError):
-        is_open = False
-    sock.close()
-    return is_open
-
-
-def start_mysql_instance(mysqld: str, my_cnf: str):
-    """
-    @brief 启动一个mysql实例
-    @param mysqld mysqld可执行文件路径
-    @param my_cnf mysql实例的配置文件
-    """
-    if not os.path.exists(mysqld):
-        logger.error(f"start mysql instance failed, {mysqld} not exist")
-        return False
-    if not os.path.exists(my_cnf):
-        logger.error(f"start mysql instance failed, {my_cnf} not exist")
-        return False
+class MySQLUnix(abc.ABC):
     
-    config_parser = configparser.ConfigParser()
-    config_parser.read(my_cnf)
-    if config_parser.has_section('mysqld') and config_parser.has_option('mysqld', 'port'):
-        port = int(config_parser.get('mysqld', 'port'))
-    else:
-        logger.error(f"The 'mysqld' section or 'port' option does not exist in the {my_cnf}")
+    def __init__(self, basename: str, port: int):
+        # mysql安装路径
+        self.bin_basename = basename
+        self.port = port
+        self.initialized = False
+        self.pid = -1
 
-    # 设置shell=True, 才能使用&, Linux的shell才支持& 
-    command_str = f"nohup {mysqld} --defaults-file={my_cnf} &"
-    try:
-        complete_proc = subprocess.run(command_str, shell=True, capture_output=True, check=False, encoding='utf-8')
-    except Exception as e:
-        logger.error(f"start mysql instance failed! {e}")
+        self.data_directory = None
+        self.mysqld = None
+        self.my_cnf = None
+
+    @abc.abstractmethod
+    def initialize_data_directory(self, password: str):
+        pass
+
+    def is_initialized(self):
+        return self.initialized
+
+    def get_version(self):
+        """
+        @brief 获取MySQL版本号
+        """
+        command_list = [f"{self.bin_basename}/bin/mysql_config", "--version"]
+        try:
+            complete_proc = subprocess.run(command_list, capture_output=True, encoding='utf-8')
+        except Exception as e:
+            logger.error(f"{e}")
+            return None
+        if complete_proc.returncode or complete_proc.stderr:
+            logger.error(f"get mysql version failed! {complete_proc.stderr}")
+            return None
+        # 去除换行符
+        return complete_proc.stdout.strip()
+
+    def get_pid(self):
+        pid_file = f"{self.data_directory}/conf/mysqld.pid"
+        if os.path.exists(pid_file):
+            with open(pid_file, mode='r') as f:
+                self.pid = int(f.readline())
+        return self.pid
+
+    def is_started(self):
+        """
+        @brief 判断mysql服务是否已经启动
+        """
+        self.get_pid()
+        if self.pid == -1:
+            return False
+        if not os.path.exists(f"/proc/{self.pid}"):
+            self.pid = -1
+            return False
+        if not util.is_port_in_use(self.port):
+            return False
+        return True
+
+    def start(self):
+        """
+        @brief 启动mysql服务, 不要重复启动... 否则mysqld进程真可以开多个
+        """
+        if self.is_started():
+            return True
+
+        check_list= [self.mysqld, self.data_directory, self.my_cnf]
+        for check in check_list:
+            if not os.path.exists(check):
+                logger.error(f"start mysql instance failed, {check} not exist")
+                return False
+        
+        # 设置shell=True才使用Linux的shell去执行指令, 才能使用& 后台启动
+        command_str = f"nohup {self.mysqld} --defaults-file={self.my_cnf} &"
+        try:
+            complete_proc = subprocess.run(command_str, shell=True,
+                                           capture_output=True, encoding='utf-8')
+        except Exception as e:
+            logger.error(f"start mysql instance failed! {e}")
+            return False
+        if complete_proc.stdout:
+            logger.info(f"{complete_proc.stdout}")
+        if complete_proc.returncode or complete_proc.stderr:
+            logger.error(f"start mysql instance failed! {complete_proc.stderr}")
+            return False
+
+        # 需要确保mysql实例启动, 通常启动非常快, 但机器负载高的时候可能需要等待...
+        for _ in range(10):
+            if util.is_port_in_use(self.port):
+                return True
+            time.sleep(2)
         return False
-    if complete_proc.stdout:
-        logger.info(f"{complete_proc.stdout}")
-    if complete_proc.returncode or complete_proc.stderr:
-        logger.error(f"{complete_proc.stderr}")
+
+    def stop(self):
+        """
+        @brief 关闭mysql服务;
+        """
+        if not self.is_started():
+            return True
+        os.kill(self.pid, signal.SIGQUIT)
+        for _ in range(10):
+            if os.path.exists(f"/proc/{self.pid}"):
+                time.sleep(2)
+            else:
+                return True
         return False
 
-    # 加&后台守护进程启动, 所以需要确保mysql实例启动, 一般启动是很快, 机器负载高的时候可能需要等待...
-    count = 0
-    success = False
-    while not success and count < 10:
-        success = is_port_in_use(port)
-        time.sleep(2)
-        count += 1
-    return success
 
+class MySQL(MySQLUnix):
 
-def create_mysql_instance(local_ip: str, port: int, user: str, password: str):
-    """
-    @brief 创建mysql实例, 数据目录会创建在/home/${USER}/mysql_data/${port}
-    @param local_ip 本地机器IP
-    @param port     mysql实例开放的端口
-    @param user     创建实例后, 新建user
-    @param password 创建实例后, root账户和新建user的密码
-    """
-    # 若是Port已经被监听, 可能导致无法完成实例创建
-    if is_port_in_use(port):
-        logger.error(f"Port {port} already in use, please confirm")
-        return False
+    def __init__(self, basename: str, port: int):
+        super().__init__(basename, port)
+        username = util.get_current_username()
+        self.data_directory = define.MYSQL_DATA_DIR_TEMPLATE.format(user=username, port=port)
+        if os.path.exists(self.data_directory):
+            self.initialized = True
 
-    mysqld = f"{MYSQL_BASENAME}/bin/mysqld" 
-    if not os.path.exists(mysqld):
-        logger.error(f"{MYSQL_BASENAME} not exists! can't create mysql instance")
-        return False
-    
-    username = get_current_username()
-    mysql_data_dir = MYSQL_DATA_DIR_TEMPLATE.format(user=username, port=port)
-    if os.path.exists(mysql_data_dir):
-        logger.error(f"{mysql_data_dir} exists! can't created repeatedly")
-        return False
-    need_create_dirs = [
-        mysql_data_dir,
-        f"{mysql_data_dir}/conf",
-        f"{mysql_data_dir}/data",
-        f"{mysql_data_dir}/log",
-    ]
-    for dir in need_create_dirs:
-        os.makedirs(dir, exist_ok=True)
+        self.mysqld = f"{self.bin_basename}/bin/mysqld"
+        self.my_cnf = f"{self.data_directory}/conf/my.cnf"
 
-    try:
-        my_cnf = f"{mysql_data_dir}/conf/my.cnf"
+    def initialize_data_directory(self, password: str):
+        """
+        @brief 创建mysql实例, 数据目录都会创建在/home/${USER}/mysql_data/${port}
+        @param password  创建实例后, 修改root账户的密码
+        """
+        if util.is_port_in_use(self.port):
+            logger.error(f"Port {self.port} already in use, can't create mysql instance, please confirm")
+            return False
+         
+        if not os.path.exists(self.mysqld):
+            logger.error(f"{self.mysqld} not exists! can't create mysql instance")
+            return False
+        
+        username = util.get_current_username()
+        if os.path.exists(self.data_directory):
+            logger.error(f"{self.data_directory} exists! can't created repeatedly")
+            return False
+        need_create_dirs = [
+            self.data_directory,
+            f"{self.data_directory}/conf",
+            f"{self.data_directory}/data",
+            f"{self.data_directory}/log",
+        ]
+        for dir in need_create_dirs:
+            os.makedirs(dir, exist_ok=True)
+        
+        local_ip = util.get_ip_address(define.INTERFACE_NAME)
+        my_cnf_content = define.MYSQL_CONF_TEMPLATE.format(base_dir=self.bin_basename,
+                                                           data_dir=self.data_directory,
+                                                           ip=local_ip, port=self.port)
         # 将基本的配置写入到my.cnf文件中
-        configure_content = MYSQL_CONF_TEMPLATE.format(port=port, data_dir=mysql_data_dir, base_dir=MYSQL_BASENAME,ip=local_ip)
-        with open(my_cnf, mode='w', encoding='utf-8') as f:
-            f.write(configure_content)
-    except Exception as e:
-        logger.error(f"{e}")
-        return False
-    # mysql初始化后root账号是随机密码, 密码输出到错误日志中; 设置--initialize-insecure后则root是空密码
-    command_str = f"{mysqld} --defaults-file={my_cnf} --user={username} --initialize-insecure"
-    try:
-        complete_proc = subprocess.run(command_str.split(), capture_output=True, check=False, encoding='utf-8')
-    except Exception as e:
-        logger.error(f"{e}")
-        return False
-    if complete_proc.stdout:
-        logger.info(f"{complete_proc.stdout}")
-    if complete_proc.returncode or complete_proc.stderr:
-        logger.error(f"{complete_proc.stderr}")
-        return False
+        try:
+            with open(self.my_cnf, mode='w', encoding='utf-8') as f:
+                f.write(my_cnf_content)
+        except Exception as e:
+            logger.error(f"{e}")
+            return False
+        # mysql初始化后root账号是随机密码, 密码输出到错误日志中; 设置--initialize-insecure后则root是空密码
+        command_str = f"{self.mysqld} --defaults-file={self.my_cnf} --user={username} --initialize-insecure"
+        try:
+            complete_proc = subprocess.run(command_str.split(), capture_output=True, encoding='utf-8')
+        except Exception as e:
+            logger.error(f"{e}")
+            return False
+        if complete_proc.stdout:
+            logger.info(f"{complete_proc.stdout}")
+        if complete_proc.returncode or complete_proc.stderr:
+            logger.error(f"{complete_proc.stderr}")
+            return False
+        
+        if not self.start():
+            return False
+        
+        try:
+            conn = pymysql.connect(host="127.0.0.1", port=self.port, user='root')
+            cursor = conn.cursor()
+            cursor.execute(f"alter user root@'localhost' identified by '{password}'")
+        except Exception as e:
+            logger.error(f"{e}")
+            return False
+        finally:
+            conn.close()
+        self.initialized = True
+        return True
     
-    if not start_mysql_instance(mysqld, my_cnf):
-        return False
-    
-    try:
-        conn = pymysql.connect(host=local_ip, port=port, user='root')
-        cursor = conn.cursor()
-        cursor.execute(f"alter user root@'localhost' identified by '{password}'")
-        cursor.execute(f"create user {user}@'%' identified by '{password}'")
-        # 是否要执行shutdown? 从该函数功能上来说, 只是创建实例, 创建完关闭它没毛病
-        # 但是一般创建完, 肯定就是要用的, 那此时就没必要关闭
-        cursor.execute("shutdown")
-    except Exception as e:
-        logger.error(f"{e}")
-        return False
-    finally:
-        cursor.execute("shutdown")
-        conn.close()
-    return True
 
+class MariaDB(MySQLUnix):
 
-def create_mariadb_instance(local_ip: str, port: int, user: str, password: str):
-    """
-    @brief 创建MariaDB实例, 数据目录会创建在/home/${USER}/maria_data/${port}
-    @param local_ip 本地机器IP
-    @param port     mysql实例开放的端口
-    @param user     创建实例后, 新建user
-    @param password 创建实例后, root账户和新建user的密码
-    """
-    # 若是Port已经被监听, 可能导致无法完成实例创建
-    if is_port_in_use(port):
-        logger.error(f"Port {port} already in use, please confirm")
-        return False
+    def __init__(self, basename: str, port: int):
+        super().__init__(basename, port)
+        username = util.get_current_username()
+        self.data_directory = define.MARIADB_DATA_DIR_TEMPLATE.format(user=username, port=port)
+        if os.path.exists(self.data_directory):
+            self.initialized = True
 
-    install_script = f"{MARIADB_BASENAME}/scripts/mariadb-install-db"
-    mariadbd = f"{MARIADB_BASENAME}/bin/mariadbd"
-    if not os.path.exists(install_script):
-        logger.error(f"{MARIADB_BASENAME} not exists! can't create mariadb instance")
-        return False
-    
-    username = get_current_username()
-    data_dir = MARIADB_DATA_DIR_TEMPLATE.format(user=username, port=port)
-    if os.path.exists(data_dir):
-        logger.error(f"{data_dir} exists! can't created repeatedly")
-        return False
-    need_create_dirs = [
-        data_dir,
-        f"{data_dir}/conf",
-        f"{data_dir}/data",
-        f"{data_dir}/log",
-    ]
-    for dir in need_create_dirs:
-        os.makedirs(dir, exist_ok=True)
+        # 虽然mysqld也可以使用, 但是会有告警...
+        self.mysqld = f"{self.bin_basename}/bin/mariadbd"
+        self.my_cnf = f"{self.data_directory}/conf/my.cnf"
 
-    try:
-        my_cnf = f"{data_dir}/conf/my.cnf"
+    def initialize_data_directory(self, password: str):
+        """
+        @brief 创建MariaDB实例, 数据目录会创建在/home/${USER}/maria_data/${port}
+        @param password  创建实例后, root账户和新建user的密码
+        """
+        # 若是Port已经被监听, 则无法完成实例创建
+        if util.is_port_in_use(self.port):
+            logger.error(f"Port {self.port} already in use, please confirm")
+            return False
+
+        install_script = f"{self.bin_basename}/scripts/mariadb-install-db"
+        mariadbd = f"{self.bin_basename}/bin/mariadbd"
+        if not os.path.exists(install_script):
+            logger.error(f"{self.bin_basename} not exists! can't create mariadb instance")
+            return False
+        
+        username = util.get_current_username()
+        data_directory = define.MARIADB_DATA_DIR_TEMPLATE.format(user=username, port=self.port)
+        if os.path.exists(data_directory):
+            logger.error(f"{data_directory} exists! can't created repeatedly")
+            return False
+        need_create_dirs = [
+            data_directory,
+            f"{data_directory}/conf",
+            f"{data_directory}/data",
+            f"{data_directory}/log",
+        ]
+        for dir in need_create_dirs:
+            os.makedirs(dir, exist_ok=True)
+        
+        local_ip = util.get_ip_address(define.INTERFACE_NAME)
+        my_cnf_content = define.MARIADB_CONF_TEMPLATE.format(base_dir=self.bin_basename,
+                                                                data_dir=self.data_directory,
+                                                                ip=local_ip, port=self.port)
         # 将基本的配置写入到my.cnf文件中
-        configure_content = MARIADB_CONF_TEMPLATE.format(port=port, data_dir=data_dir, base_dir=MARIADB_BASENAME, ip=local_ip)
-        with open(my_cnf, mode='w', encoding='utf-8') as f:
-            f.write(configure_content)
-    except Exception as e:
-        logger.error(f"{e}")
-        return False
-    
-    # 初始化数据目录的方法和mysql有区别, 必须用mariadb的指定的shell脚本, 既然是shell脚本, subprocess这里设置shell=True, 并设为True后不能传递命令list, 只能是str 
-    command_str = f"{install_script} --defaults-file={my_cnf}" # --user={username}
-    try:
-        complete_proc = subprocess.run(command_str, shell=True, capture_output=True, check=False, encoding='utf-8')
-        # mariadb的初始化脚本写的也不怎么样, 错误都是往stdout输出, 很无语, 导致以下错误捕获实际都没用...
-    except Exception as e:
-        logger.error(f"{e}")
-        return False
-    if complete_proc.stdout:
-        logger.info(f"{complete_proc.stdout}")
-    if complete_proc.returncode or complete_proc.stderr:
-        logger.error(f"{complete_proc.stderr}")
-        return False
-    
-    if not start_mysql_instance(mariadbd, my_cnf):
-        return False
-    
-    try:
+        try:
+            with open(self.my_cnf, mode='w', encoding='utf-8') as f:
+                f.write(my_cnf_content)
+        except Exception as e:
+            logger.error(f"{e}")
+            return False
+        
+        # 初始化数据目录的方法和mysql有区别, 必须用mariadb的指定的shell脚本;
+        # 既然是shell脚本, subprocess这里设置shell=True, 并设为True后不能传递命令list, 只能是str 
+        command_str = f"{install_script} --defaults-file={self.my_cnf}"
+        try:
+            complete_proc = subprocess.run(command_str, shell=True, 
+                                           capture_output=True, encoding='utf-8')
+        except Exception as e:
+            logger.error(f"{e}")
+            return False
+        if complete_proc.stdout:
+            logger.info(f"initialize data directory failed: {complete_proc.stdout}")
+        if complete_proc.returncode or complete_proc.stderr:
+            logger.error(f"initialize data directory failed: {complete_proc.stderr}")
+            return False
+        
+        if not self.start():
+            return False
+        
+        version = self.get_version()
+        
         # mariadb初始化之后会创建一些奇怪的账号, 暂时不删除它, 后面再看看有什么用, 再决定是否删除
         # 除root@'localhost'之外, 还会创建username@'localhost'账号, 并且也会有所有权限, 但这两初始账号只能通过unix domain socket连接
-        conn = pymysql.connect(unix_socket=f'{data_dir}/conf/mysql.sock', user=username)
-        cursor = conn.cursor()
-        cursor.execute(f"alter user root@'localhost' identified by '{password}'")
-        cursor.execute(f"alter user {username}@'localhost' identified by '{password}'")
-        cursor.execute(f"create user {user}@'%' identified by '{password}'")
-        cursor.execute("select version()")
-        version_str: str = cursor.fetchone()[0]
-        version = version_str.split('-')[0]
-        if version >= "10.4.0":
-            cursor.execute("INSTALL SONAME 'ha_spider'")
-        else:
-            cursor.execute(f"source {MARIADB_BASENAME}/share/install_spider.sql")
-    except Exception as e:
-        logger.error(f"{e}")
-        return False
-    finally:
-        cursor.execute("shutdown")
-        conn.close()
-    return True
+        unix_sock = f'{data_directory}/conf/mysql.sock'
+        try:
+            conn = pymysql.connect(unix_socket=unix_sock, user=username)
+            cursor = conn.cursor()
+            cursor.execute(f"alter user root@'localhost' identified by '{password}'")
+            cursor.execute(f"alter user {username}@'localhost' identified by '{password}'")
+
+            # 10.4.0以上版本安装非常简单
+            if util.compare_version("10.4.0", version) <= 0:
+                cursor.execute("INSTALL SONAME 'ha_spider'")
+            else:
+                # 通过mysql api无法无法执行 source 指令，只能通过mysql client执行source指令...
+                command_list = [f"{self.bin_basename}/bin/mysql", 
+                                f"--socket={unix_sock}"
+                                "-s",
+                                f"-e 'source {self.bin_basename}/share/install_spider.sql'"]
+                subprocess.run(command_list, capture_output=True, encoding='utf-8')
+        except Exception as e:
+            logger.error(f"install spider engine failed: {e}")
+            return False
+        finally:
+            conn.close()
+        self.initialized = True
+        return True

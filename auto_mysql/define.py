@@ -8,10 +8,10 @@
 import logging
 import sys
 
+# 该变量比较关键, 涉及到最后MySQL对外的 report_ip 设置, 必须保证正确;
+INTERFACE_NAME = "eth0"
 
-# 在/usr/local/目录下存放了对应的MySQL二进制包, 这里假设已安装mysql-8.0.35
 # 如果用户使用包管理工具安装了mysqld, 那就自己修改这里的代码了;
-MYSQL_BASENAME = "/usr/local/mysql-8.0.35"
 MYSQL_DATA_DIR_TEMPLATE = """/home/{user}/mysql_data/{port}"""
 MYSQL_CONF_TEMPLATE = """
 [client]
@@ -39,7 +39,7 @@ log-error = {data_dir}/log/error.log
 slow_query_log_file = {data_dir}/log/slow_query.log
 
 # plugin X
-mysqlx = OFF # 没用x协议, 就关闭它
+mysqlx = OFF
 mysqlx_port = {port}0
 mysqlx_socket = {data_dir}/conf/mysqlx.sock
 
@@ -50,7 +50,6 @@ report_port = {port}
 
 
 # 注意Mariadb和mysql支持的配置是不同的, 有些配置会导致mariadb创建实例失败, 启动失败等情况;
-MARIADB_BASENAME = "/usr/local/mariadb-11.4.2"
 MARIADB_DATA_DIR_TEMPLATE = """/home/{user}/maria_data/{port}"""
 MARIADB_CONF_TEMPLATE = """
 [client]
