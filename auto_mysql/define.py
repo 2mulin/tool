@@ -8,30 +8,33 @@
 import logging
 import sys
 
-# 该变量比较关键, 涉及到最后MySQL对外的 report_ip 设置, 必须保证正确;
+# 该变量涉及到最后MySQL对外暴露的 report_ip 变量, 影响主从复制, 必须保证正确;
 INTERFACE_NAME = "eth0"
 
-# 如果用户使用包管理工具安装了mysqld, 那就自己修改这里的代码了;
+# 如果用户使用包管理工具安装mysqld, 那就自己修改这里的代码了;
 MYSQL_DATA_DIR_TEMPLATE = """/home/{user}/mysql_data/{port}"""
 MYSQL_CONF_TEMPLATE = """
 [client]
 port = {port}
-socket = {data_dir}/conf/mysql.sock
+socket = {data_dir}/run/mysql.sock
 
 [mysqld]
-port = {port}
 # mysql的安装目录, 很重要, 会影响到安装plugin
 basedir = {base_dir}/
 datadir = {data_dir}/data
-socket = {data_dir}/conf/mysql.sock
-pid-file = {data_dir}/conf/mysqld.pid
+port = {port}
+
+# mysqld运行过程中会生成的文件
+socket = {data_dir}/run/mysql.sock
+pid-file = {data_dir}/run/mysqld.pid
 
 key_buffer_size = 16M
 max_allowed_packet = 128M
 
 log_timestamps = system
 
-general_log = ON
+# 默认OFF, 不然初始化数据目录会有很多日志
+general_log = OFF
 long_query_time = 3
 slow_query_log = ON
 general_log_file = {data_dir}/log/general.log
@@ -43,7 +46,7 @@ mysqlx = OFF
 mysqlx_port = {port}0
 mysqlx_socket = {data_dir}/conf/mysqlx.sock
 
-# 主从复制, MGR中复制相关部件会用到; 即向从节点报告自己的IP,Port
+# 主从复制和MGR会使用到; 这两个变量的作用是向从节点报告自己的IP, Port
 report_host = {ip}
 report_port = {port}
 """
@@ -57,17 +60,20 @@ port = {port}
 socket = {data_dir}/conf/mysql.sock
 
 [mysqld]
-port = {port}
 # mariadb的安装目录, 很重要, 会影响到安装plugin
 basedir = {base_dir}/
 datadir = {data_dir}/data
-socket = {data_dir}/conf/mysql.sock
-pid-file = {data_dir}/conf/mysqld.pid
+port = {port}
+
+# mysqld运行过程中会生成的文件
+socket = {data_dir}/run/mysql.sock
+pid-file = {data_dir}/run/mysqld.pid
 
 key_buffer_size = 16M
 max_allowed_packet = 128M
 
-general_log = ON
+# 默认OFF, 不然初始化数据目录会有很多日志
+general_log = OFF
 long_query_time = 3
 slow_query_log = ON
 general_log_file = {data_dir}/log/general.log

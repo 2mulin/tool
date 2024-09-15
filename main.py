@@ -5,7 +5,6 @@
 """
 
 import auto_mysql
-import auto_mysql.define
 
 
 if __name__ == '__main__':
@@ -13,10 +12,11 @@ if __name__ == '__main__':
     mariadb_basename = "/usr/local/mariadb-11.4.2"
 
     mysql4401 = auto_mysql.MySQL(mysql_basename, 4401)
-
-    import auto_mysql.util
+    if not mysql4401.is_initialized():
+        mysql4401.initialize_data_directory('111')
+    mysql4401.start()
 
     spider3306 = auto_mysql.MariaDB(mariadb_basename, 3306)
     if not spider3306.is_initialized():
         spider3306.initialize_data_directory('111')
-        spider3306.start()
+    spider3306.start()

@@ -50,7 +50,7 @@ class MySQLUnix(abc.ABC):
         return complete_proc.stdout.strip()
 
     def get_pid(self):
-        pid_file = f"{self.data_directory}/conf/mysqld.pid"
+        pid_file = f"{self.data_directory}/run/mysqld.pid"
         if os.path.exists(pid_file):
             with open(pid_file, mode='r') as f:
                 self.pid = int(f.readline())
@@ -151,6 +151,7 @@ class MySQL(MySQLUnix):
         need_create_dirs = [
             self.data_directory,
             f"{self.data_directory}/conf",
+            f"{self.data_directory}/run",
             f"{self.data_directory}/data",
             f"{self.data_directory}/log",
         ]
@@ -191,8 +192,6 @@ class MySQL(MySQLUnix):
         except Exception as e:
             logger.error(f"{e}")
             return False
-        finally:
-            conn.close()
         self.initialized = True
         return True
     
@@ -234,6 +233,7 @@ class MariaDB(MySQLUnix):
         need_create_dirs = [
             data_directory,
             f"{data_directory}/conf",
+            f"{data_directory}/run",
             f"{data_directory}/data",
             f"{data_directory}/log",
         ]
@@ -274,7 +274,7 @@ class MariaDB(MySQLUnix):
         
         # mariadb初始化之后会创建一些奇怪的账号, 暂时不删除它, 后面再看看有什么用, 再决定是否删除
         # 除root@'localhost'之外, 还会创建username@'localhost'账号, 并且也会有所有权限, 但这两初始账号只能通过unix domain socket连接
-        unix_sock = f'{data_directory}/conf/mysql.sock'
+        unix_sock = f'{data_directory}/run/mysql.sock'
         try:
             conn = pymysql.connect(unix_socket=unix_sock, user=username)
             cursor = conn.cursor()
@@ -294,7 +294,5 @@ class MariaDB(MySQLUnix):
         except Exception as e:
             logger.error(f"install spider engine failed: {e}")
             return False
-        finally:
-            conn.close()
         self.initialized = True
         return True
