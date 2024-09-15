@@ -11,9 +11,47 @@ import sys
 # 该变量涉及到最后MySQL对外暴露的 report_ip 变量, 影响主从复制, 必须保证正确;
 INTERFACE_NAME = "eth0"
 
-# 如果用户使用包管理工具安装mysqld, 那就自己修改这里的代码了;
-MYSQL_DATA_DIR_TEMPLATE = """/home/{user}/mysql_data/{port}"""
-MYSQL_CONF_TEMPLATE = """
+
+MYSQL5_DATA_DIR_TEMPLATE = """/home/{user}/mysql5_data/{port}"""
+MYSQL5_CONF_TEMPLATE = """
+[client]
+port = {port}
+socket = {data_dir}/run/mysql.sock
+
+[mysqld]
+# mysql的安装目录, 很重要, 会影响到安装plugin
+basedir = {base_dir}/
+datadir = {data_dir}/data
+port = {port}
+
+# mysqld运行过程中会生成的文件
+socket = {data_dir}/run/mysql.sock
+pid-file = {data_dir}/run/mysqld.pid
+
+# secure_file_priv 这个变量被用于限制导入和导出的数据目录;
+# 比如 LOAD DATA 和 SELECT ... INTO OUTFILE 语句, 以及 LOAD_FILE() 函数;
+# 限制到每个实例的run目录, 默认情况或不设置都有告警...
+secure_file_priv = {data_dir}/run/
+
+key_buffer_size = 16M
+max_allowed_packet = 128M
+
+# 默认OFF, 不然初始化数据目录会有很多日志
+general_log = OFF
+long_query_time = 3
+slow_query_log = ON
+general_log_file = {data_dir}/log/general.log
+log-error = {data_dir}/log/error.log
+slow_query_log_file = {data_dir}/log/slow_query.log
+
+# 主从复制和MGR会使用到; 这两个变量的作用是向从节点报告自己的IP, Port
+report_host = {ip}
+report_port = {port}
+"""
+
+
+MYSQL8_DATA_DIR_TEMPLATE = """/home/{user}/mysql8_data/{port}"""
+MYSQL8_CONF_TEMPLATE = """
 [client]
 port = {port}
 socket = {data_dir}/run/mysql.sock

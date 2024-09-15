@@ -1,4 +1,4 @@
 # -*- coding: utf-8 -*-
 
 
-from .mysql import MySQL, MariaDB
+from .mysql import MySQL5, MySQL8, MariaDB
