@@ -123,6 +123,47 @@ class MySQLUnix(abc.ABC):
             else:
                 return True
         return False
+    
+    def create_replicate_user(self, root_password, replicate_user, replicate_password):
+        """
+        @brief 创建用于主从复制的账号
+        """
+        try:
+            conn = pymysql.connect(host="127.0.0.1", port=self.port, 
+                                   user='root', password=root_password)
+            cursor = conn.cursor()
+            cursor.execute(f"create user {replicate_user}@'%' identified by '{replicate_password}'")
+            cursor.execute(f"grant replication slave on *.* to '{replicate_user}'@'%' ")
+        except Exception as e:
+            logger.error(f"create replicate user failed: {e}")
+            return False
+        return True
+
+    def change_master(self, root_password, master_host, master_port, 
+                      replicate_user, replicate_password,
+                      binlog_file = None, binlog_pos = None):
+        """
+        @brief 以当前节点为从节点, 设置主从复制通道;
+        @param root_password 从节点场超级管理员账号的密码
+        @param master_host 主节点IP
+        @param master_port 主节点Port
+        @param replicate_user 主节点复制账号名
+        @param replicate_password 主节点复制账号的密码
+        """
+        sql = (f"change master to master_host='{master_host}', master_port={master_port}, "
+               f"master_user='{replicate_user}', master_password='{replicate_password}'")
+        if binlog_file and binlog_pos:
+            sql = f"{sql}, master_log_file='{binlog_file}', master_log_pos='{binlog_pos}'"
+        try:
+            conn = pymysql.connect(host="127.0.0.1", port=self.port,
+                                user="root", password=root_password)
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            cursor.execute(f"start slave")
+        except Exception as e:
+            logger.error(f"set replicate failed: {e}")
+            return False
+        return True
 
 
 

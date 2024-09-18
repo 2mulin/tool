@@ -44,6 +44,10 @@ general_log_file = {data_dir}/log/general.log
 log-error = {data_dir}/log/error.log
 slow_query_log_file = {data_dir}/log/slow_query.log
 
+# 默认OFF, 必须自己设置
+log_bin = ON
+server_id = {port}
+
 # 主从复制和MGR会使用到; 这两个变量的作用是向从节点报告自己的IP, Port
 report_host = {ip}
 report_port = {port}
@@ -84,6 +88,9 @@ mysqlx = OFF
 mysqlx_port = {port}0
 mysqlx_socket = {data_dir}/conf/mysqlx.sock
 
+log_bin = ON
+server_id = {port}
+
 # 主从复制和MGR会使用到; 这两个变量的作用是向从节点报告自己的IP, Port
 report_host = {ip}
 report_port = {port}
@@ -121,6 +128,9 @@ slow_query_log_file = {data_dir}/log/slow_query.log
 # 主从复制, MGR中复制相关部件会用到; 即向从节点报告自己的IP,Port
 report_host = {ip}
 report_port = {port}
+
+log_bin = ON
+server_id = {port}
 
 # 提前增加spider引擎的配置
 loose-spider_general_log = ON
